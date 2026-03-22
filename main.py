@@ -1,7 +1,7 @@
 import os
 import configparser
 import logging
-from media_manager.core.orchestrator import MediaOrchestrator
+from movie_flow.core.orchestrator import MediaOrchestrator
 
 # Configure logging globally for the application
 logging.basicConfig(
@@ -10,7 +10,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-def load_config(config_path: str = "media_manager/config.ini") -> configparser.ConfigParser:
+def load_config(config_path: str = "movie_flow/config.ini") -> configparser.ConfigParser:
     """Loads and parses the configuration file."""
     if not os.path.exists(config_path):
         logging.error(f"Configuration file not found: {config_path}")
