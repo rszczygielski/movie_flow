@@ -42,18 +42,19 @@ class MediaOrchestrator:
         # 1. Resolve paths (Auto-detect from folder if provided)
         self._scan_media_folder()
 
-        # Ensure the main video file actually exists before doing anything
-        if not Path(self.video_file).exists():
-            logging.error(f"Execution aborted: Main video file not found at '{self.video_file}'")
-            return
-
         # Check configuration flags for each task
         run_analyze = self.config.getboolean("Tasks", "analyze_video")
         run_transcode = self.config.getboolean("Tasks", "transcode_video")
         run_download = self.config.getboolean("Tasks", "download_subtitles")
-        run_process = self.config.getboolean("Tasks", "process_subtitles")
+        run_process_subtitles = self.config.getboolean("Tasks", "process_subtitles")
 
-        logging.debug(f"Task status - Analyze: {run_analyze}, Transcode: {run_transcode}, Download: {run_download}, Process Subs: {run_process}")
+        logging.debug(f"Task status - Analyze: {run_analyze}, Transcode: {run_transcode}, Download: {run_download}, Process Subs: {run_process_subtitles}")
+
+        # Ensure the main video file actually exists before doing anything
+        video_required = run_analyze or run_transcode or run_download
+        if video_required and (not self.video_file or not Path(self.video_file).exists()):
+            logging.error("Execution aborted: Main video file is required for selected tasks but was not found.")
+            return
 
         # 1. Analyze video properties
         if run_analyze:
@@ -68,7 +69,7 @@ class MediaOrchestrator:
             self._download_subtitles()
 
         # 4. Process subtitles (fix encoding, shift, convert)
-        if run_process:
+        if run_process_subtitles:
             self._process_subtitles()
 
         logging.info("All selected orchestration tasks have been executed successfully.")
@@ -212,10 +213,22 @@ class MediaOrchestrator:
         logging.debug(f"Initializing SubtitlePipeline with {len(processors_list)} processors.")
         pipeline = SubtitlePipeline(processors=processors_list)
 
+        # Define output paths
+        input_path = Path(self.subtitle_file)
+        convert_to_srt = self.config.getboolean("SubtitleProcessing", "convert_to_srt")
+
+        # Ensure the output extension is .srt if SRT conversion is enabled
+        output_path = input_path.with_suffix('.srt') if convert_to_srt else input_path
+
         try:
-            pipeline.execute(input_path=self.subtitle_file,
-                             output_path=self.subtitle_file)
+            pipeline.execute(input_path=str(input_path), output_path=str(output_path))
             logging.info("Subtitle processing pipeline finished successfully.")
+
+            # Cleanup: Remove the original text file to prevent duplicates if the extension was changed to .srt
+            if convert_to_srt and input_path != output_path and input_path.exists():
+                input_path.unlink()
+                logging.debug(f"Removed original text file to prevent duplicates: {input_path.name}")
+
         except Exception as e:
             logging.error(f"Subtitle processing pipeline failed: {e}")
 
