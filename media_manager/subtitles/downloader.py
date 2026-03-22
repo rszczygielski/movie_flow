@@ -1,5 +1,4 @@
 import os
-import shutil
 import logging
 from pathlib import Path
 from napi import NapiPy
@@ -79,14 +78,13 @@ class NapiDownloader:
 
             # 2. Move and rename the temporary file to the requested output path
             output_file = Path(output_path).expanduser().resolve()
-            print(output_file)
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
             logging.debug(f"Moving downloaded subtitles to specific path: {output_file}")
-            shutil.move(tmp_file, str(output_file))
+            subs_path = napi.move_subs_to_movie(tmp_file, str(output_file))
 
-            logging.info(f"Subtitles successfully downloaded and saved to: {output_file}")
-            return str(output_file)
+            logging.info(f"Subtitles successfully downloaded and saved to: {subs_path}")
+            return subs_path
 
         except ImportError:
             self._log_import_error()

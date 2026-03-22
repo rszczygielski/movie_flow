@@ -4,15 +4,15 @@ import configparser
 from pathlib import Path
 
 # --- Video Imports ---
-from video.analyzer import VideoAnalyzer
-from video.transcoder import VideoTranscoder
+from ..video.analyzer import VideoAnalyzer
+from ..video.transcoder import VideoTranscoder
 
 # --- Subtitle Imports ---
-from subtitles.downloader import NapiDownloader
-from core.pipeline import SubtitlePipeline
-from subtitles.cleaners import PolishEncodingFixer, TextSanitizer
-from subtitles.shifter import AutoSubtitleShifter
-from subtitles.converter import MicroDvdToSrtConverter
+from ..subtitles.downloader import NapiDownloader
+from ..core.pipeline import SubtitlePipeline
+from ..subtitles.cleaners import PolishEncodingFixer, TextSanitizer
+from ..subtitles.shifter import AutoSubtitleShifter
+from ..subtitles.converter import MicroDvdToSrtConverter
 
 class MediaOrchestrator:
     """
@@ -25,18 +25,13 @@ class MediaOrchestrator:
         Initializes the orchestrator with the provided configuration.
         """
         logging.debug("Initializing MediaOrchestrator...")
+        self.video_file = None
+        self.subtitle_file = None
+
         self.config = config
 
         # Extract main paths from the configuration
         self.media_folder = config.get("Paths", "media_folder", fallback="").strip()
-        self.video_file = config.get("Paths", "video_file").strip()
-        self.subtitle_file_override = config.get("Paths", "subtitle_file", fallback="").strip()
-
-        # State variable to share data between tasks (e.g., passing the downloaded subtitle path to the processor)
-        self.active_subtitle_path = None
-
-        logging.debug(f"Target video file set to: {self.video_file}")
-        logging.debug(f"Subtitle override path provided: {self.subtitle_file_override}")
 
     def execute(self):
         """
@@ -130,7 +125,7 @@ class MediaOrchestrator:
             sys.exit(1)
 
         elif len(subtitle_files) == 1:
-            self.active_subtitle_path = str(subtitle_files[0])
+            self.subtitle_file = str(subtitle_files[0])
             logging.info(f"Auto-detected subtitle file: {subtitle_files[0].name}")
         else:
             logging.info("No unprocessed subtitle files found in the media_folder.")
@@ -185,17 +180,13 @@ class MediaOrchestrator:
         downloader = NapiDownloader()
 
         logging.debug("Initiating subtitle download sequence...")
-        self.napi_hash = self.config.get("Paths", "napi_hash").strip()
 
-        if self.napi_hash:
-            downloaded_path = downloader.download_by_hash(self.napi_hash, self.media_folder)
-        else:
-            downloaded_path = downloader.download_by_video_path(self.video_file)
+        downloaded_path = downloader.download_by_video_path(self.video_file)
 
         if downloaded_path:
             # Store the downloaded path in the state variable so the processing task can use it
-            self.active_subtitle_path = downloaded_path
-            logging.info(f"Subtitles downloaded and registered in orchestrator state: {self.active_subtitle_path}")
+            self.subtitle_file = downloaded_path
+            logging.info(f"Subtitles downloaded and registered in orchestrator state: {self.subtitle_file}")
         else:
             logging.warning("Subtitle download failed or no subtitles were found for this video.")
 
@@ -205,16 +196,11 @@ class MediaOrchestrator:
         """Handles the text processing pipeline for subtitles."""
         logging.info("--- TASK: PROCESS SUBTITLES ---")
 
-        if not self.active_subtitle_path:
-            if self.subtitle_file_override and Path(self.subtitle_file_override).exists():
-                self.active_subtitle_path = self.subtitle_file_override
-                logging.info(f"Using subtitle file from config override: {self.active_subtitle_path}")
-
-        if not self.active_subtitle_path:
+        if not self.subtitle_file or not Path(self.subtitle_file).exists():
             logging.error("No subtitle file found to process. Did you forget to download or set the path in config?")
             return
 
-        logging.debug(f"Proceeding to process subtitle file: {self.active_subtitle_path}")
+        logging.debug(f"Proceeding to process subtitle file: {self.subtitle_file}")
 
         # Assemble the pipeline based on configuration toggles
         processors_list = self._build_processor_list()
@@ -226,18 +212,9 @@ class MediaOrchestrator:
         logging.debug(f"Initializing SubtitlePipeline with {len(processors_list)} processors.")
         pipeline = SubtitlePipeline(processors=processors_list)
 
-        # Determine the correct file extension for the output
-        # If we are converting MicroDVD to SRT, we MUST save it as .srt
-        convert_to_srt = self.config.getboolean("SubtitleProcessing", "convert_to_srt")
-        out_ext = ".srt" if convert_to_srt else Path(self.active_subtitle_path).suffix
-
-        # # Append '_PL' to the original filename to avoid overwriting the source subtitle file
-        # output_sub_path = Path(self.active_subtitle_path).with_name(f"{Path(self.active_subtitle_path).stem}_PL{out_ext}")
-
-        # logging.debug(f"Output subtitle will be saved to: {output_sub_path}")
-
         try:
-            pipeline.execute(self.active_subtitle_path, self.active_subtitle_path)
+            pipeline.execute(input_path=self.subtitle_file,
+                             output_path=self.subtitle_file)
             logging.info("Subtitle processing pipeline finished successfully.")
         except Exception as e:
             logging.error(f"Subtitle processing pipeline failed: {e}")

@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 from typing import List
-from subtitles.base import BaseProcessor
+from ..subtitles.base import BaseProcessor
 
 class SubtitlePipeline:
     """
